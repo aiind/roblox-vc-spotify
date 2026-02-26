@@ -43,8 +43,7 @@ current_path = None          # currently playing file path
 
 app = Flask(__name__)
 
-# WORKSPACE_FOLDER = Path(__file__).parent / "roblox spotify"
-WORKSPACE_FOLDER = Path(__file__).parent / "fart"
+WORKSPACE_FOLDER = Path(__file__).parent / "files"
 WORKSPACE_FOLDER.mkdir(parents=True, exist_ok=True)
 
 IMAGES_FOLDER = WORKSPACE_FOLDER / "images"
@@ -64,6 +63,13 @@ SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET") or os.getenv("SPOTIFY
 HOST = os.getenv("HOST", "localhost")
 PORT = int(os.getenv("PORT", "5000"))
 
+def validate_credentials():
+	"""Validate Spotify credentials on startup"""
+	if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
+		logging.error("Missing Spotify credentials. Set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET environment variables.")
+		print("Error: Missing Spotify credentials. Set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET environment variables.")
+		exit(1)
+
 def check_dependencies():
 	"""Ensure required external executables are available."""
 	missing = []
@@ -75,6 +81,7 @@ def check_dependencies():
 		exit(1)
 
 check_dependencies()
+validate_credentials()
 
 def download_image(image_url):
 	"""Download image from URL and save to workspace. Returns filename or None"""
@@ -169,45 +176,59 @@ def fetch_song_data(spotify_link, client_id=None, client_secret=None):
 	except Exception as e:
 		return {"error": str(e)}
 
-def download_song(track_info):
-	"""Download full song from YouTube using yt-dlp"""
+def get_ydl_opts(quiet=False):
+	"""Get common yt-dlp options"""
+	cookie_file = Path(__file__).parent / "cookies.txt"
+	return {
+		"format": "bestaudio[ext=m4a]/bestaudio/best",
+		"quiet": quiet,
+		"no_warnings": quiet,
+		"socket_timeout": 30,
+		"http_headers": {
+			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+		},
+		"cookiefile": str(cookie_file) if cookie_file.exists() else None,
+	}
+
+
+def download_audio(video_id, search_query=None, is_url=False):
+	"""Download audio from YouTube using yt-dlp. Returns path to mp3 or None"""
 	try:
-		track_id = track_info["track_id"]
-		title = track_info["title"]
-		artist = track_info["artist"]
-		output_path = WORKSPACE_FOLDER / f"{track_id}.mp3"
+		output_path = WORKSPACE_FOLDER / f"{video_id}.mp3"
 		
 		if output_path.exists():
 			return str(output_path)
 		
-		search_query = f"{artist} - {title}"
 		cookie_file = Path(__file__).parent / "cookies.txt"
+		download_opts = get_ydl_opts(quiet=False)
+		download_opts["postprocessors"] = [{
+			"key": "FFmpegExtractAudio",
+			"preferredcodec": "mp3",
+			"preferredquality": "192",
+		}]
+		download_opts["outtmpl"] = str(WORKSPACE_FOLDER / f"{video_id}")
 		
-		ydl_opts = {
-			"format": "bestaudio[ext=m4a]/bestaudio/best",
-			"postprocessors": [{
-				"key": "FFmpegExtractAudio",
-				"preferredcodec": "mp3",
-				"preferredquality": "192",
-			}],
-			"outtmpl": str(WORKSPACE_FOLDER / f"{track_id}"),
-			"quiet": False,
-			"no_warnings": False,
-			"socket_timeout": 30,
-			"http_headers": {
-				"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-			},
-			"cookiefile": str(cookie_file) if cookie_file.exists() else None,
-		}
-		
-		with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-			print(f"Downloading: {search_query}")
-			ydl.extract_info(f"ytsearch:{search_query}", download=True)
+		with yt_dlp.YoutubeDL(download_opts) as ydl:
+			if is_url:
+				print(f"Downloading: {search_query}")
+				ydl.extract_info(search_query, download=True)
+			else:
+				print(f"Downloading: {search_query}")
+				ydl.extract_info(f"ytsearch:{search_query}", download=True)
 		
 		return str(output_path)
 	except Exception as e:
 		print(f"Download error: {e}")
 		return None
+
+
+def download_song(track_info):
+	"""Download full song from YouTube using yt-dlp"""
+	track_id = track_info["track_id"]
+	title = track_info["title"]
+	artist = track_info["artist"]
+	search_query = f"{artist} - {title}"
+	return download_audio(track_id, search_query, is_url=False)
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -221,27 +242,6 @@ def serve_image(filename):
 	if image_path.exists():
 		return send_file(str(image_path), mimetype='image/jpeg')
 	return jsonify({"error": "Image not found"}), 404
-
-@app.route("/fetch", methods=["GET"])
-def fetch():
-	"""Fetch song data and download from YouTube (legacy endpoint)"""
-	link = request.args.get("link")
-	client_id = request.args.get("client_id") or SPOTIFY_CLIENT_ID
-	client_secret = request.args.get("client_secret") or SPOTIFY_CLIENT_SECRET
-	if not client_id or not client_secret:
-		return jsonify({"error": "No client_id. Pass client_id & client_secret query params or set SPOTIPY_CLIENT_ID/SPOTIPY_CLIENT_SECRET environment variables."}), 400
-	
-	if not link:
-		return jsonify({"error": "No link provided"}), 400
-	
-	song_data = fetch_song_data(link, client_id=client_id, client_secret=client_secret)
-	if "error" in song_data:
-		return jsonify(song_data), 400
-	
-	audio_path = download_song(song_data)
-	song_data["path"] = audio_path
-	
-	return jsonify(song_data), 200
 
 @app.route("/spotify/fetch", methods=["GET"])
 def spotify_fetch():
@@ -300,37 +300,18 @@ def youtube_fetch():
 			title = info.get("title", "Unknown")
 			thumbnail_url = info.get("thumbnail", "")
 			
-			output_path = WORKSPACE_FOLDER / f"{video_id}.mp3"
-			
 			image_filename = download_image(thumbnail_url) if thumbnail_url else None
 			
-			if not output_path.exists():
-				download_opts = {
-					"format": "bestaudio[ext=m4a]/bestaudio/best",
-					"postprocessors": [{
-						"key": "FFmpegExtractAudio",
-						"preferredcodec": "mp3",
-						"preferredquality": "192",
-					}],
-					"outtmpl": str(WORKSPACE_FOLDER / f"{video_id}"),
-					"quiet": False,
-					"no_warnings": False,
-					"socket_timeout": 30,
-					"http_headers": {
-						"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-					},
-					"cookiefile": str(cookie_file) if cookie_file.exists() else None,
-				}
-				
-				with yt_dlp.YoutubeDL(download_opts) as ydl:
-					ydl.extract_info(link, download=True)
+			audio_path = download_audio(video_id, link, is_url=True)
+			if not audio_path:
+				return jsonify({"error": "Failed to download audio"}), 500
 			
 			song_data = {
 				"title": title,
 				"artist": "YouTube",
 				"image": image_filename,
 				"track_id": video_id,
-				"path": str(output_path)
+				"path": audio_path
 			}
 			
 			print(f"Downloaded: {title}")
@@ -538,41 +519,22 @@ def search():
 			track_id = video.get("id", "unknown")
 			thumbnail_url = video.get("thumbnail", "")
 			
-			output_path = WORKSPACE_FOLDER / f"{track_id}.mp3"
-			
-			image_filename = download_image(thumbnail_url) if thumbnail_url else None
-			
-			if not output_path.exists():
-				download_opts = {
-					"format": "bestaudio[ext=m4a]/bestaudio/best",
-					"postprocessors": [{
-						"key": "FFmpegExtractAudio",
-						"preferredcodec": "mp3",
-						"preferredquality": "192",
-					}],
-					"outtmpl": str(WORKSPACE_FOLDER / f"{track_id}"),
-					"quiet": False,
-					"no_warnings": False,
-					"socket_timeout": 30,
-					"http_headers": {
-						"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-					},
-					"cookiefile": str(cookie_file) if cookie_file.exists() else None,
-				}
-				
-				with yt_dlp.YoutubeDL(download_opts) as ydl:
-					ydl.extract_info(f"https://www.youtube.com/watch?v={track_id}", download=True)
-			
-			song_data = {
-				"title": title,
-				"artist": "YouTube",
-				"image": image_filename,
-				"track_id": track_id,
-				"path": str(output_path)
-			}
-			
-			print(f"Found and downloaded: {title}")
-			return jsonify(song_data), 200
+		image_filename = download_image(thumbnail_url) if thumbnail_url else None
+		
+		audio_path = download_audio(track_id, f"https://www.youtube.com/watch?v={track_id}", is_url=True)
+		if not audio_path:
+			return jsonify({"error": "Failed to download audio"}), 500
+		
+		song_data = {
+			"title": title,
+			"artist": "YouTube",
+			"image": image_filename,
+			"track_id": track_id,
+			"path": audio_path
+		}
+		
+		print(f"Found and downloaded: {title}")
+		return jsonify(song_data), 200
 	
 	except Exception as e:
 		print(f"Search error: {e}")
@@ -581,5 +543,5 @@ def search():
 if __name__ == "__main__":
 	print(f"🎵 Spotify Music Bot Server running on http://{HOST}:{PORT}")
 	print("Tip: To route output into Roblox Voice Chat, install a virtual audio cable (e.g., VB-Audio Cable), set the virtual cable as the system default playback device, then select the cable as the microphone/input in Roblox settings.")
-	print("Ensure SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET are set in the environment, or pass client_id & client_secret with /fetch.")
+	print("Ensure SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET are set in the environment.")
 	app.run(host=HOST, port=PORT, debug=False)
