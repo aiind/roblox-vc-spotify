@@ -132,14 +132,11 @@ BE SURE THAT YOU HAVE CABLE OUTPUT AS YOUR MICROPHONE IN ROBLOX AND FOR HEADPHON
 
 ### Whitelist Users
 
-Edit `main.lua` and update the whitelist:
+Edit the loadstring and update the whitelist:
 
 ```lua
-local WHITELIST = {
-    "lolwhenme",
-    "friend_username",
-    "another_friend"
-}
+WHITELIST = {"lolwhenme"};
+WHITELIST = {"lolwhenme" , "hi"};
 ```
 
 Only whitelisted players can use `!play` command.
@@ -185,23 +182,7 @@ In `spotify_server.py`, change the MP3 bitrate:
 - Some systems may have limited pause support
 - Stop and re-play as a workaround
 
-## 📁 Project Structure
-
 ```
-roblox vc spotify/
-├── main.lua                    # Roblox GUI and logic
-├── spotify_server.py           # Python Flask backend
-├── cookies.txt                 # (Optional) YouTube cookies
-├── workspace/                  # Downloaded MP3 files
-└── README.md                   # This file
-```
-
-## 🔐 Security Notes
-
-- Keep your Spotify API credentials private
-- Don't share `cookies.txt` publicly
-- Only whitelist trusted players
-- The bot runs locally on your machine
 
 ## 📝 Command Examples
 
