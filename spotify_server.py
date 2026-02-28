@@ -63,13 +63,6 @@ SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET") or os.getenv("SPOTIFY
 HOST = os.getenv("HOST", "localhost")
 PORT = int(os.getenv("PORT", "5000"))
 
-def validate_credentials():
-	"""Validate Spotify credentials on startup"""
-	if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
-		logging.error("Missing Spotify credentials. Set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET environment variables.")
-		print("Error: Missing Spotify credentials. Set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET environment variables.")
-		exit(1)
-
 def check_dependencies():
 	"""Ensure required external executables are available."""
 	missing = []
@@ -81,7 +74,6 @@ def check_dependencies():
 		exit(1)
 
 check_dependencies()
-validate_credentials()
 
 def download_image(image_url):
 	"""Download image from URL and save to workspace. Returns filename or None"""
@@ -246,11 +238,12 @@ def serve_image(filename):
 @app.route("/spotify/fetch", methods=["GET"])
 def spotify_fetch():
 	"""Fetch song data from Spotify link and download from YouTube"""
+	if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
+		return jsonify({"error": "Spotify credentials not configured. Set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET environment variables to use Spotify features."}), 400
+	
 	link = request.args.get("link")
 	client_id = request.args.get("client_id") or SPOTIFY_CLIENT_ID
 	client_secret = request.args.get("client_secret") or SPOTIFY_CLIENT_SECRET
-	if not client_id or not client_secret:
-		return jsonify({"error": "No client_id. Pass client_id & client_secret query params or set SPOTIPY_CLIENT_ID/SPOTIPY_CLIENT_SECRET environment variables."}), 400
 	
 	if not link:
 		return jsonify({"error": "No link provided"}), 400

@@ -156,7 +156,7 @@ def main():
 	client_id = args.client_id or SPOTIFY_CLIENT_ID
 	client_secret = args.client_secret or SPOTIFY_CLIENT_SECRET
 	if not client_id or not client_secret:
-		print("Error: No client_id. Pass it with --client-id or set SPOTIPY_CLIENT_ID / SPOTIPY_CLIENT_SECRET environment variables.")
+		print(json.dumps({"error": "Spotify credentials not configured. Pass --client-id and --client-secret or set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET environment variables to use Spotify features."}))
 		return
 	
 	song_data = fetch_song_data(spotify_link, client_id=client_id, client_secret=client_secret)
