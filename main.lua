@@ -124,7 +124,7 @@ inputLabel.Size = UDim2.new(0.65, -10, 0, 20)
 inputLabel.Position = UDim2.new(0, SIZES.padding, 0, SIZES.headerHeight + 20)
 inputLabel.BackgroundTransparency = 1
 inputLabel.Text = "Enter Spotify Link:"
-inputLabel.TextColor3 = COLORS.muted
+inputLabel.TextColor3 = COLORS.grayLighter
 inputLabel.TextSize = 14
 inputLabel.TextXAlignment = Enum.TextXAlignment.Left
 inputLabel.Font = Enum.Font.Gotham
@@ -142,7 +142,7 @@ modeButton.Font = Enum.Font.GothamBold
 modeButton.BorderSizePixel = 0
 modeButton.Parent = mainFrame
 local modeCorner = Instance.new("UICorner", modeButton)
-modeCorner.CornerRadius = UDim.new(0, SIZES.cornerRadiusSmall)
+modeCorner.CornerRadius = UDim.new(0, SIZES.cornerRadiusBtn)
 
 local inputBox = Instance.new("TextBox")
 inputBox.Name = "InputBox"
@@ -155,7 +155,7 @@ inputBox.PlaceholderText = "https://open.spotify.com/track/..."
 inputBox.TextSize = 12
 inputBox.Font = Enum.Font.Gotham
 inputBox.BorderSizePixel = 1
-inputBox.BorderColor3 = COLORS.grayText
+inputBox.BorderColor3 = COLORS.grayMed
 inputBox.Parent = mainFrame
 
 local loadButton = Instance.new("TextButton")
@@ -176,9 +176,9 @@ local infoFrame = Instance.new("Frame")
 infoFrame.Name = "InfoFrame"
 infoFrame.Size = UDim2.new(1, -20, 0, 120)
 infoFrame.Position = UDim2.new(0, SIZES.padding, 0, SIZES.headerHeight + 125)
-infoFrame.BackgroundColor3 = COLORS.gray
+infoFrame.BackgroundColor3 = COLORS.grayLight
 infoFrame.BorderSizePixel = 1
-infoFrame.BorderColor3 = COLORS.grayText
+infoFrame.BorderColor3 = COLORS.grayMed
 infoFrame.Parent = mainFrame
 
 local songImage = Instance.new("ImageLabel")
@@ -225,7 +225,7 @@ local playButton = Instance.new("TextButton")
 playButton.Name = "PlayButton"
 playButton.Size = UDim2.new(0.6, -10, 0, SIZES.buttonHeight)
 playButton.Position = UDim2.new(0, SIZES.padding, 0, SIZES.mainHeight - SIZES.buttonHeight - SIZES.padding)
-playButton.BackgroundColor3 = COLORS.grayText
+playButton.BackgroundColor3 = COLORS.grayMed
 playButton.TextColor3 = COLORS.white
 playButton.Text = "▶ Play"
 playButton.TextSize = 14
@@ -835,7 +835,7 @@ local function playNextInQueue()
 		setStatus("🎵 Playing: " .. nextSong.title, COLORS.success)
 
 		local success = pcall(function()
-			game:HttpGet(CONFIG.pythonServer .. "/play?path=" .. encodeUrl(nextSong.path))
+			game:HttpGet(CONFIG.pythonServer .. ENDPOINTS.play .. "?path=" .. encodeUrl(nextSong.path))
 		end)
 
 		if success then
@@ -887,9 +887,9 @@ local function callPythonBackend(link)
 		return false
 	end
 	
-	local endpoint = "/spotify/fetch?link=" .. encodeUrl(link)
+	local endpoint = ENDPOINTS.spotifyFetch .. "?link=" .. encodeUrl(link)
 	if serviceMode == "youtube" then
-		endpoint = "/youtube/fetch?link=" .. encodeUrl(link)
+		endpoint = ENDPOINTS.youtubeFetch .. "?link=" .. encodeUrl(link)
 	end
 	
 	local success, result = pcall(function()
@@ -950,7 +950,7 @@ local function playSong()
 		setStatus("🎵 Resumed: " .. currentSongData.title, COLORS.success)
 
 		local success = pcall(function()
-			game:HttpGet(CONFIG.pythonServer .. "/resume")
+			game:HttpGet(CONFIG.pythonServer .. ENDPOINTS.resume)
 		end)
 
 		if not success then
@@ -972,7 +972,7 @@ local function playSong()
 	setStatus("🎵 Playing: " .. currentSongData.title, COLORS.success)
 
 	local success = pcall(function()
-		game:HttpGet(CONFIG.pythonServer .. "/play?path=" .. encodeUrl(currentSongData.path))
+		game:HttpGet(CONFIG.pythonServer .. ENDPOINTS.play .. "?path=" .. encodeUrl(currentSongData.path))
 	end)
 
 	if not success then
@@ -1001,7 +1001,7 @@ local function pauseSong()
 	setStatus("⏸ Paused: " .. (currentSongData and currentSongData.title or ""), COLORS.warning)
 	
 	local success = pcall(function()
-		game:HttpGet(CONFIG.pythonServer .. "/pause")
+		game:HttpGet(CONFIG.pythonServer .. ENDPOINTS.pause)
 	end)
 	
 	if not success then
@@ -1014,7 +1014,7 @@ end
 
 local function stopSong()
 	pcall(function()
-		game:HttpGet(CONFIG.pythonServer .. "/stop")
+		game:HttpGet(CONFIG.pythonServer .. ENDPOINTS.stop)
 	end)
 
 	isPlaying = false
@@ -1034,7 +1034,7 @@ end
 
 local function skipSong()
 	pcall(function()
-		game:HttpGet(CONFIG.pythonServer .. "/stop")
+		game:HttpGet(CONFIG.pythonServer .. ENDPOINTS.stop)
 	end)
 
 	task.wait(0.2)
@@ -1062,7 +1062,7 @@ local function searchAndPlaySong(songName)
 	setStatus("Finding " .. songName .. "... Please wait.", COLORS.warning)
 	
 	local success, result = pcall(function()
-		return game:HttpGet(CONFIG.pythonServer .. "/search?query=" .. encodeUrl(songName))
+		return game:HttpGet(CONFIG.pythonServer .. ENDPOINTS.search .. "?query=" .. encodeUrl(songName))
 	end)
 	
 	if not success or not result then
