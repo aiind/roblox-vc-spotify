@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from pathlib import Path
 import json
 import subprocess
@@ -34,6 +34,10 @@ except ImportError:
 	print("Install: pip install flask spotipy yt-dlp")
 	exit(1)
 
+apple_music_token = None
+apple_music_token_time = 0
+APPLE_MUSIC_TOKEN_CACHE_TIME = 3600
+
 current_process = None
 is_paused = False
 playback_lock = threading.Lock()
@@ -45,9 +49,6 @@ app = Flask(__name__)
 
 WORKSPACE_FOLDER = Path(__file__).parent / "files"
 WORKSPACE_FOLDER.mkdir(parents=True, exist_ok=True)
-
-IMAGES_FOLDER = WORKSPACE_FOLDER / "images"
-IMAGES_FOLDER.mkdir(parents=True, exist_ok=True)
 
 @app.after_request
 def add_cors_headers(response):
@@ -75,32 +76,7 @@ def check_dependencies():
 
 check_dependencies()
 
-def download_image(image_url):
-	"""Download image from URL and save to workspace. Returns filename or None"""
-	if not image_url:
-		return None
-	
-	try:
-		import hashlib
-		IMAGES_FOLDER.mkdir(parents=True, exist_ok=True)
-		
-		url_hash = hashlib.md5(image_url.encode()).hexdigest()
-		image_filename = f"{url_hash}.jpg"
-		image_path = IMAGES_FOLDER / image_filename
-		
-		if image_path.exists():
-			return image_filename
-		
-		response = requests.get(image_url, timeout=10)
-		if response.status_code == 200:
-			with open(image_path, 'wb') as f:
-				f.write(response.content)
-			print(f"Downloaded image: {image_filename}")
-			return image_filename
-	except Exception as e:
-		print(f"Image download error: {e}")
-	
-	return None
+
 
 def clean_youtube_url(url):
 	"""Extract video ID from YouTube URL and return clean URL, removing extra parameters"""
@@ -153,13 +129,9 @@ def fetch_song_data(spotify_link, client_id=None, client_secret=None):
 		
 		track = sp.track(track_id)
 		
-		image_url = track["album"]["images"][0]["url"] if track["album"]["images"] else ""
-		image_filename = download_image(image_url) if image_url else None
-		
 		song_data = {
 			"title": track["name"],
 			"artist": ", ".join([artist["name"] for artist in track["artists"]]),
-			"image": image_filename,
 			"preview_url": track["preview_url"],
 			"track_id": track_id
 		}
@@ -167,6 +139,148 @@ def fetch_song_data(spotify_link, client_id=None, client_secret=None):
 		return song_data
 	except Exception as e:
 		return {"error": str(e)}
+
+def get_apple_music_token():
+	"""Extract Apple Music token from Apple Music website"""
+	global apple_music_token, apple_music_token_time
+	
+	if apple_music_token and (time.time() - apple_music_token_time) < APPLE_MUSIC_TOKEN_CACHE_TIME:
+		return apple_music_token
+	
+	try:
+		main_page_url = "https://beta.music.apple.com"
+		headers = {
+			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+		}
+		
+		response = requests.get(main_page_url, headers=headers, timeout=10)
+		if response.status_code != 200:
+			return None
+		
+		import re
+		js_file_match = re.search(r"/assets/index-[^/]+\.js", response.text)
+		if not js_file_match:
+			print("Could not find index JS file")
+			return None
+		
+		js_file_uri = js_file_match.group(0)
+		js_file_url = main_page_url + js_file_uri
+		
+		js_response = requests.get(js_file_url, headers=headers, timeout=10)
+		if js_response.status_code != 200:
+			return None
+		
+		token_match = re.search(r"eyJh[^\"]+", js_response.text)
+		if not token_match:
+			print("Could not extract token from JS file")
+			return None
+		
+		apple_music_token = token_match.group(0)
+		apple_music_token_time = time.time()
+		print(f"Apple Music token extracted successfully")
+		return apple_music_token
+	
+	except Exception as e:
+		print(f"Apple Music token extraction error: {e}")
+		return None
+
+def extract_track_id_apple(apple_music_link):
+	"""Extract track ID from Apple Music link
+	Examples:
+	- https://music.apple.com/us/album/song-name/id?i=trackid
+	- https://music.apple.com/us/song/song-name/id
+	"""
+	try:
+		parsed_url = urlparse(apple_music_link)
+		if "music.apple.com" not in parsed_url.netloc:
+			return None
+		
+		query_params = parse_qs(parsed_url.query)
+		if "i" in query_params:
+			return query_params["i"][0]
+		
+		path_parts = parsed_url.path.split("/")
+		if "song" in path_parts:
+			song_index = path_parts.index("song")
+			if song_index + 2 < len(path_parts):
+				return path_parts[-1]
+		
+		return None
+	except Exception as e:
+		print(f"Apple Music ID extraction error: {e}")
+		return None
+
+def fetch_song_data_apple(apple_music_link):
+	"""Fetch song metadata from Apple Music"""
+	try:
+		token = get_apple_music_token()
+		if not token:
+			return {"error": "Could not retrieve Apple Music token"}
+		
+		track_id = extract_track_id_apple(apple_music_link)
+		if not track_id:
+			return {"error": "Invalid Apple Music link"}
+		
+		storefront = "us"
+		parsed_url = urlparse(apple_music_link)
+		path_parts = parsed_url.path.split("/")
+		if len(path_parts) > 1 and len(path_parts[1]) == 2:
+			storefront = path_parts[1]
+		
+		amp_api_url = f"https://amp-api.music.apple.com/v1/catalog/{storefront}/songs/{track_id}"
+		
+		query_params = {
+			"include": "albums,artists,explicit",
+			"extend": "extendedAssetUrls",
+			"l": ""
+		}
+		
+		headers = {
+			"Authorization": f"Bearer {token}",
+			"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+			"Origin": "https://music.apple.com"
+		}
+		
+		response = requests.get(amp_api_url, params=query_params, headers=headers, timeout=10)
+		if response.status_code != 200:
+			return {"error": f"Apple Music API error: {response.status_code}"}
+		
+		data = response.json()
+		if "data" not in data or len(data["data"]) == 0:
+			return {"error": "Song not found"}
+		
+		song = data["data"][0]
+		
+		title = song.get("attributes", {}).get("name", "Unknown")
+		artist_names = []
+		
+		if "relationships" in song and "artists" in song["relationships"]:
+			for artist in song["relationships"]["artists"].get("data", []):
+				artist_name = artist.get("attributes", {}).get("name")
+				if artist_name:
+					artist_names.append(artist_name)
+		
+		if not artist_names and "attributes" in song:
+			composer = song["attributes"].get("composerName")
+			if composer:
+				artist_names.append(composer)
+		
+		artist = ", ".join(artist_names) if artist_names else "Unknown Artist"
+		
+		if not artist_names:
+			print(f"Warning: Could not extract artist for song {track_id}. API response: {song.get('attributes', {})}")
+		
+		song_data = {
+			"title": title,
+			"artist": artist,
+			"track_id": track_id,
+			"url": apple_music_link
+		}
+		
+		return song_data
+	except Exception as e:
+		return {"error": str(e)}
+
 
 def get_ydl_opts(quiet=False):
 	"""Get common yt-dlp options"""
@@ -227,13 +341,9 @@ def health():
 	"""Check if server is running"""
 	return jsonify({"status": "ok"}), 200
 
-@app.route("/image/<filename>", methods=["GET"])
-def serve_image(filename):
-	"""Serve downloaded images from workspace"""
-	image_path = IMAGES_FOLDER / filename
-	if image_path.exists():
-		return send_file(str(image_path), mimetype='image/jpeg')
-	return jsonify({"error": "Image not found"}), 404
+
+
+
 
 @app.route("/spotify/fetch", methods=["GET"])
 def spotify_fetch():
@@ -256,6 +366,24 @@ def spotify_fetch():
 	song_data["path"] = audio_path
 	
 	return jsonify(song_data), 200
+
+@app.route("/apple/fetch", methods=["GET"])
+def apple_fetch():
+	"""Fetch song data from Apple Music link and download from YouTube"""
+	link = request.args.get("link")
+	
+	if not link:
+		return jsonify({"error": "No link provided"}), 400
+	
+	song_data = fetch_song_data_apple(link)
+	if "error" in song_data:
+		return jsonify(song_data), 400
+	
+	audio_path = download_song(song_data)
+	song_data["path"] = audio_path
+	
+	return jsonify(song_data), 200
+
 
 @app.route("/youtube/fetch", methods=["GET"])
 def youtube_fetch():
@@ -291,9 +419,6 @@ def youtube_fetch():
 			
 			video_id = info.get("id", "unknown")
 			title = info.get("title", "Unknown")
-			thumbnail_url = info.get("thumbnail", "")
-			
-			image_filename = download_image(thumbnail_url) if thumbnail_url else None
 			
 			audio_path = download_audio(video_id, link, is_url=True)
 			if not audio_path:
@@ -302,7 +427,6 @@ def youtube_fetch():
 			song_data = {
 				"title": title,
 				"artist": "YouTube",
-				"image": image_filename,
 				"track_id": video_id,
 				"path": audio_path
 			}
@@ -534,7 +658,8 @@ def search():
 		return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-	print(f"🎵 Spotify Music Bot Server running on http://{HOST}:{PORT}")
+	print(f"🎵 Music Bot Server running on http://{HOST}:{PORT}")
+	print("Supported services: Spotify, Apple Music, YouTube")
 	print("Tip: To route output into Roblox Voice Chat, install a virtual audio cable (e.g., VB-Audio Cable), set the virtual cable as the system default playback device, then select the cable as the microphone/input in Roblox settings.")
-	print("Ensure SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET are set in the environment.")
+	print("Ensure SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET are set in the environment for Spotify support.")
 	app.run(host=HOST, port=PORT, debug=False)

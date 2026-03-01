@@ -34,6 +34,7 @@ local COLORS = {
 	darkRed = Color3.fromRGB(180, 80, 80),
 	discordBlue = Color3.fromRGB(88, 101, 242),
 	lightGray = Color3.fromRGB(220, 220, 220),
+	appleMusicRed = Color3.fromRGB(250, 34, 52),
 }
 
 local SIZES = {
@@ -57,7 +58,8 @@ local ENDPOINTS = {
 	health = "/health",
 	spotifyFetch = "/spotify/fetch",
 	youtubeFetch = "/youtube/fetch",
-	image = "/image/",
+	appleFetch = "/apple/fetch",
+
 	play = "/play",
 	pause = "/pause",
 	resume = "/resume",
@@ -181,19 +183,7 @@ infoFrame.BorderSizePixel = 1
 infoFrame.BorderColor3 = COLORS.grayMed
 infoFrame.Parent = mainFrame
 
-local songImage = Instance.new("ImageLabel")
-songImage.Name = "SongImage"
-songImage.Size = UDim2.new(0, 84, 0, 84)
-songImage.Position = UDim2.new(0, 8, 0, 8)
-songImage.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-songImage.BorderSizePixel = 0
-local imageCorner = Instance.new("UICorner", songImage)
-imageCorner.CornerRadius = UDim.new(0, 8)
-local imageStroke = Instance.new("UIStroke", songImage)
-imageStroke.Color = COLORS.grayStroke
-imageStroke.Transparency = 0.6
 
-songImage.Parent = infoFrame
 
 local songTitle = Instance.new("TextLabel")
 songTitle.Name = "SongTitle"
@@ -235,6 +225,8 @@ playButton.Parent = mainFrame
 playButton.Visible = false
 local playCorner = Instance.new("UICorner", playButton)
 playCorner.CornerRadius = UDim.new(0, SIZES.cornerRadiusBtn)
+
+
 
 local pauseButton = Instance.new("TextButton")
 pauseButton.Name = "PauseButton"
@@ -286,18 +278,7 @@ local isPaused = false
 local playbackThread = nil
 local serviceMode = "spotify"
 
-local function setRemoteImage(imgLabel, imageFilename)
-	if not imgLabel or not imageFilename or imageFilename == "" then
-		return
-	end
 
-	task.spawn(function()
-		local imageUrl = CONFIG.pythonServer .. ENDPOINTS.image .. imageFilename
-		local setSuccess = pcall(function()
-			imgLabel.Image = imageUrl
-		end)
-	end)
-end
 
 local function isPlayerWhitelisted(playerName)
 	for _, whitelistedName in ipairs(CONFIG.whitelist) do
@@ -316,6 +297,10 @@ local function isYouTubeLink(link)
 	return link:find("youtube.com") ~= nil or link:find("youtu.be") ~= nil
 end
 
+local function isAppleMusicLink(link)
+	return link:find("music.apple.com") ~= nil
+end
+
 local function validateLink(link, mode)
 	link = tostring(link):match("^%s*(.-)%s*$") or ""
 	if link == "" then return false end
@@ -323,6 +308,8 @@ local function validateLink(link, mode)
 		return isSpotifyLink(link)
 	elseif mode == "youtube" then
 		return isYouTubeLink(link)
+	elseif mode == "apple" then
+		return isAppleMusicLink(link)
 	end
 	return false
 end
@@ -331,7 +318,6 @@ local function encodeUrl(url)
 	return HttpService:UrlEncode(url)
 end
 
--- Helper: Debounce function to prevent rapid clicks
 local function debounce(func, delay)
 	local lastCall = 0
 	return function(...)
@@ -343,13 +329,16 @@ local function debounce(func, delay)
 	end
 end
 
--- Helper: Create a debounced button click
 local function createDebouncedButton(button, callback, delay)
 	local debounced = debounce(callback, delay or 0.3)
 	button.MouseButton1Click:Connect(debounced)
 end
 
--- Helper: Switch service mode (Spotify/YouTube)
+local function setStatus(text, color)
+	statusLabel.Text = text
+	statusLabel.TextColor3 = color or COLORS.success
+end
+
 local function switchServiceMode(newMode)
 	if newMode == "spotify" then
 		serviceMode = "spotify"
@@ -358,13 +347,20 @@ local function switchServiceMode(newMode)
 		inputLabel.Text = "Enter Spotify Link:"
 		inputBox.PlaceholderText = "https://open.spotify.com/track/..."
 		headerLabel.Text = "🎵 Spotify Music Bot"
-	else
+	elseif newMode == "youtube" then
 		serviceMode = "youtube"
 		modeButton.Text = "YouTube"
 		modeButton.BackgroundColor3 = COLORS.red
 		inputLabel.Text = "Enter YouTube Link:"
 		inputBox.PlaceholderText = "https://www.youtube.com/watch?v=..."
 		headerLabel.Text = "🎵 YouTube Music Bot"
+	elseif newMode == "apple" then
+		serviceMode = "apple"
+		modeButton.Text = "Apple"
+		modeButton.BackgroundColor3 = COLORS.appleMusicRed
+		inputLabel.Text = "Enter Apple Music Link:"
+		inputBox.PlaceholderText = "https://music.apple.com/us/song/..."
+		headerLabel.Text = "🎵 Apple Music Bot"
 	end
 	inputBox.Text = ""
 	setStatus("✓ Switched to " .. serviceMode:sub(1,1):upper() .. serviceMode:sub(2), COLORS.success)
@@ -617,7 +613,6 @@ creatorName.TextSize = 14
 creatorName.TextXAlignment = Enum.TextXAlignment.Left
 creatorName.ZIndex = 101
 
--- Description Section
 local descSection = Instance.new("Frame", creditsContent)
 descSection.Name = "DescSection"
 descSection.Size = UDim2.new(1, 0, 0, 60)
@@ -642,7 +637,6 @@ descText.TextWrapped = true
 descText.TextYAlignment = Enum.TextYAlignment.Top
 descText.ZIndex = 101
 
--- Community Section
 local communitySection = Instance.new("Frame", creditsContent)
 communitySection.Name = "CommunitySection"
 communitySection.Size = UDim2.new(1, 0, 0, 60)
@@ -710,17 +704,11 @@ local function updateQueueUI()
 		itemStroke.Transparency = 0.7
 		itemStroke.Thickness = 1
 		
-		local thumb = Instance.new("ImageLabel", queueItem)
-		thumb.Size = UDim2.new(0,44,0,44)
-		thumb.Position = UDim2.new(0,6,0,6)
-		thumb.BackgroundTransparency = 1
-		local thumbCorner = Instance.new("UICorner", thumb)
-		thumbCorner.CornerRadius = UDim.new(0,6)
-		setRemoteImage(thumb, song.image)
+
 		
 		local itemTitle = Instance.new("TextLabel", queueItem)
-		itemTitle.Size = UDim2.new(1, -64, 0, 26)
-		itemTitle.Position = UDim2.new(0, 56, 0, 6)
+		itemTitle.Size = UDim2.new(1, -10, 0, 26)
+		itemTitle.Position = UDim2.new(0, 8, 0, 6)
 		itemTitle.BackgroundTransparency = 1
 		itemTitle.Text = song.title
 		itemTitle.TextColor3 = Color3.fromRGB(240,240,240)
@@ -730,8 +718,8 @@ local function updateQueueUI()
 		itemTitle.TextTruncate = Enum.TextTruncate.AtEnd
 		
 		local itemArtist = Instance.new("TextLabel", queueItem)
-		itemArtist.Size = UDim2.new(1, -64, 0, 18)
-		itemArtist.Position = UDim2.new(0, 56, 0, 30)
+		itemArtist.Size = UDim2.new(1, -10, 0, 18)
+		itemArtist.Position = UDim2.new(0, 8, 0, 30)
 		itemArtist.BackgroundTransparency = 1
 		itemArtist.Text = song.artist
 		itemArtist.TextColor3 = Color3.fromRGB(170,170,170)
@@ -864,11 +852,6 @@ local function playNextInQueue()
 	end
 end
 
-local function setStatus(text, color)
-	statusLabel.Text = text
-	statusLabel.TextColor3 = color or COLORS.success
-end
-
 local function callPythonBackend(link)
 	link = tostring(link):match("^%s*(.-)%s*$") or ""
 	if link == "" then
@@ -881,8 +864,10 @@ local function callPythonBackend(link)
 	if not validateLink(link, serviceMode) then
 		if serviceMode == "spotify" then
 			setStatus("✗ Invalid Spotify link", COLORS.error)
-		else
+		elseif serviceMode == "youtube" then
 			setStatus("✗ Invalid YouTube link", COLORS.error)
+		elseif serviceMode == "apple" then
+			setStatus("✗ Invalid Apple Music link", COLORS.error)
 		end
 		return false
 	end
@@ -890,6 +875,8 @@ local function callPythonBackend(link)
 	local endpoint = ENDPOINTS.spotifyFetch .. "?link=" .. encodeUrl(link)
 	if serviceMode == "youtube" then
 		endpoint = ENDPOINTS.youtubeFetch .. "?link=" .. encodeUrl(link)
+	elseif serviceMode == "apple" then
+		endpoint = ENDPOINTS.appleFetch .. "?link=" .. encodeUrl(link)
 	end
 	
 	local success, result = pcall(function()
@@ -904,9 +891,9 @@ local function callPythonBackend(link)
 			songTitle.Text = songData.title or "Unknown Title"
 			songArtist.Text = songData.artist or "Unknown Artist"
 			
-			if songData.image then
-				setRemoteImage(songImage, songData.image)
-			end
+			print("Song data received:", HttpService:JSONEncode(songData))
+			
+
 			
 			if isPlaying then
 				addToQueue(songData)
@@ -1027,7 +1014,6 @@ local function stopSong()
 
 	songTitle.Text = "No song loaded"
 	songArtist.Text = "Artist unknown"
-	setRemoteImage(songImage, nil)
 
 	setStatus("✓ Stopped", COLORS.success)
 end
@@ -1087,10 +1073,6 @@ local function searchAndPlaySong(songName)
 	songTitle.Text = searchData.title or "Unknown Title"
 	songArtist.Text = searchData.artist or "Unknown Artist"
 	
-	if searchData.image then
-		setRemoteImage(songImage, searchData.image)
-	end
-	
 	playButton.Visible = true
 	setStatus("Found the song! Playing Now...", COLORS.success)
 	pcall(function()
@@ -1108,6 +1090,8 @@ end)
 modeButton.MouseButton1Click:Connect(function()
 	if serviceMode == "spotify" then
 		switchServiceMode("youtube")
+	elseif serviceMode == "youtube" then
+		switchServiceMode("apple")
 	else
 		switchServiceMode("spotify")
 	end
@@ -1121,7 +1105,6 @@ playButton.MouseButton1Click:Connect(function()
 	playSong()
 end)
 
--- Add debounce to pause button to prevent rapid clicking
 local pauseDebounce = false
 pauseButton.MouseButton1Click:Connect(function()
 	if pauseDebounce then return end
@@ -1136,7 +1119,6 @@ pauseButton.MouseButton1Click:Connect(function()
 	pauseDebounce = false
 end)
 
--- Add debounce to stop button to prevent rapid clicking
 local stopDebounce = false
 stopButton.MouseButton1Click:Connect(function()
 	if stopDebounce then return end
