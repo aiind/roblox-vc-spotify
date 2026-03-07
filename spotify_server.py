@@ -9,6 +9,7 @@ import requests
 from urllib.parse import urlparse, parse_qs
 import shutil
 import logging
+import hashlib
 from pathlib import Path
 try:
 	from dotenv import load_dotenv
@@ -335,6 +336,24 @@ def download_song(track_info):
 	artist = track_info["artist"]
 	search_query = f"{artist} - {title}"
 	return download_audio(track_id, search_query, is_url=False)
+
+def download_image(image_url):
+	"""Download image from URL and save to workspace folder. Returns filename or None"""
+	try:
+		response = requests.get(image_url, timeout=10)
+		if response.status_code != 200:
+			return None
+		
+		filename = hashlib.md5(image_url.encode()).hexdigest() + ".jpg"
+		output_path = WORKSPACE_FOLDER / filename
+		
+		with open(output_path, "wb") as f:
+			f.write(response.content)
+		
+		return filename
+	except Exception as e:
+		print(f"Image download error: {e}")
+		return None
 
 @app.route("/health", methods=["GET"])
 def health():

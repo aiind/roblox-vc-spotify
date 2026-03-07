@@ -464,6 +464,137 @@ creditsButton.MouseButton1Up:Connect(function()
 	creditsButtonStroke.Thickness = 0
 end)
 
+local vcBypassButton = Instance.new("TextButton")
+vcBypassButton.Name = "VCBypassButton"
+vcBypassButton.Size = UDim2.new(0, 32, 0, 32)
+vcBypassButton.Position = UDim2.new(1, -82, 0.5, -16)
+vcBypassButton.BackgroundColor3 = COLORS.discordBlue
+vcBypassButton.TextColor3 = COLORS.white
+vcBypassButton.Text = "🔇"
+vcBypassButton.TextSize = 16
+vcBypassButton.Font = Enum.Font.GothamBold
+vcBypassButton.BorderSizePixel = 0
+vcBypassButton.Parent = header
+local vcBypassCorner = Instance.new("UICorner", vcBypassButton)
+vcBypassCorner.CornerRadius = UDim.new(0, SIZES.cornerRadiusBtn)
+local vcBypassStroke = Instance.new("UIStroke", vcBypassButton)
+vcBypassStroke.Color = Color3.fromRGB(100, 120, 255)
+vcBypassStroke.Thickness = 0
+vcBypassButton.MouseButton1Down:Connect(function()
+	vcBypassStroke.Thickness = 1
+end)
+vcBypassButton.MouseButton1Up:Connect(function()
+	vcBypassStroke.Thickness = 0
+end)
+
+local function bypassVoiceChat()
+	setStatus("⏳ Bypassing voice chat...", COLORS.warning)
+	
+	local success = pcall(function()
+		local VoiceChatService = game:GetService("VoiceChatService")
+		local VoiceChatInternal = game:GetService("VoiceChatInternal")
+		local CoreGui = game:GetService("CoreGui")
+
+		local MUTED_IMAGE = "rbxasset://textures/ui/VoiceChat/MicLight/Muted.png"
+		local REJOIN_COUNT = 4
+		local REJOIN_DELAY = 5
+		local CurrentlyMuted = true
+
+		local TopBarApp = CoreGui:WaitForChild("TopBarApp"):WaitForChild("TopBarApp")
+		local UnibarMenu = TopBarApp:WaitForChild("UnibarLeftFrame"):WaitForChild("UnibarMenu")
+		local MicContainer = UnibarMenu:WaitForChild("2"):WaitForChild("3")
+		local MicPath = MicContainer:FindFirstChild("toggle_mic_mute")
+
+		local function get_mic_icon(micButton)
+			micButton = micButton or MicPath
+			return micButton:WaitForChild("IntegrationIconFrame"):WaitForChild("IntegrationIcon")["1"]
+		end
+
+		local function is_muted()
+			return get_mic_icon().Image == MUTED_IMAGE
+		end
+
+		if not MicPath then
+			VoiceChatService:joinVoice()
+			MicPath = MicContainer:WaitForChild("toggle_mic_mute")
+			repeat task.wait(0.1) until is_muted()
+		end
+
+		repeat task.wait(0.1) until not is_muted()
+
+		local groupId = VoiceChatInternal:GetGroupId()
+		VoiceChatInternal:JoinByGroupId(groupId, true)
+		VoiceChatService:leaveVoice()
+		task.wait()
+
+		for _ = 1, REJOIN_COUNT do
+			VoiceChatInternal:JoinByGroupId(groupId, true)
+		end
+
+		task.wait(REJOIN_DELAY)
+		VoiceChatService:joinVoice()
+		VoiceChatInternal:JoinByGroupId(groupId, true)
+
+		MicPath.Visible = false
+		local newMic = MicPath:Clone()
+		newMic.Name = "toggle_mic_mute_new"
+		newMic.Visible = true
+		newMic.Parent = MicPath.Parent
+
+		MicPath:GetPropertyChangedSignal("Visible"):Connect(function()
+			if MicPath.Visible then newMic:Destroy() end
+		end)
+
+		local newIcon = get_mic_icon(newMic)
+		local oldIcon = get_mic_icon(MicPath)
+		local hitArea = newMic:WaitForChild("IconHitArea_toggle_mic_mute")
+		local highlighter = newMic:WaitForChild("Highlighter")
+		local redDot = newMic:WaitForChild("IntegrationIconFrame"):WaitForChild("IntegrationIcon"):WaitForChild("RedVoiceDot")
+
+		highlighter.Visible = false
+		redDot.Visible = false
+		newIcon.Image = MUTED_IMAGE
+		VoiceChatInternal:PublishPause(true)
+
+		hitArea.MouseEnter:Connect(function() highlighter.Visible = true end)
+		hitArea.MouseLeave:Connect(function() highlighter.Visible = false end)
+
+		hitArea.Activated:Connect(function()
+			CurrentlyMuted = not CurrentlyMuted
+			VoiceChatInternal:PublishPause(CurrentlyMuted)
+
+			if CurrentlyMuted then
+				newIcon.Image = MUTED_IMAGE
+				redDot.Visible = false
+			else
+				newIcon.Image = oldIcon.Image
+				redDot.Visible = true
+			end
+		end)
+
+		oldIcon:GetPropertyChangedSignal("Image"):Connect(function()
+			if not CurrentlyMuted then
+				newIcon.Image = oldIcon.Image
+				redDot.Visible = true
+			else
+				newIcon.Image = MUTED_IMAGE
+				redDot.Visible = false
+			end
+		end)
+	end)
+	
+	if success then
+		setStatus("✓ Voice Chat Bypassed!", COLORS.success)
+		safeSendChat("✓ Voice Chat Bypassed!")
+	else
+		setStatus("✗ Failed to bypass voice chat", COLORS.error)
+	end
+end
+
+vcBypassButton.MouseButton1Click:Connect(function()
+	bypassVoiceChat()
+end)
+
 local creditsModal = Instance.new("Frame")
 creditsModal.Name = "CreditsModal"
 creditsModal.Size = UDim2.new(0, 420, 0, 380)
@@ -691,8 +822,7 @@ local function updateQueueUI()
 	
 	for i, song in ipairs(songQueue) do
 		local queueItem = Instance.new("Frame")
-		queueItem.Size = UDim2.new(1, -16, 0, QUEUE_ITEM.height)
-		queueItem.Position = UDim2.new(0, QUEUE_ITEM.spacing, 0, (i-1)*QUEUE_ITEM.offset + QUEUE_ITEM.spacing)
+		queueItem.Size = UDim2.new(1, -10, 0, QUEUE_ITEM.height)
 		queueItem.BackgroundColor3 = COLORS.grayDark
 		queueItem.BorderSizePixel = 0
 		queueItem.Parent = queueList
@@ -704,10 +834,8 @@ local function updateQueueUI()
 		itemStroke.Transparency = 0.7
 		itemStroke.Thickness = 1
 		
-
-		
 		local itemTitle = Instance.new("TextLabel", queueItem)
-		itemTitle.Size = UDim2.new(1, -10, 0, 26)
+		itemTitle.Size = UDim2.new(1, -50, 0, 26)
 		itemTitle.Position = UDim2.new(0, 8, 0, 6)
 		itemTitle.BackgroundTransparency = 1
 		itemTitle.Text = song.title
@@ -718,7 +846,7 @@ local function updateQueueUI()
 		itemTitle.TextTruncate = Enum.TextTruncate.AtEnd
 		
 		local itemArtist = Instance.new("TextLabel", queueItem)
-		itemArtist.Size = UDim2.new(1, -10, 0, 18)
+		itemArtist.Size = UDim2.new(1, -50, 0, 18)
 		itemArtist.Position = UDim2.new(0, 8, 0, 30)
 		itemArtist.BackgroundTransparency = 1
 		itemArtist.Text = song.artist
@@ -727,24 +855,58 @@ local function updateQueueUI()
 		itemArtist.Font = Enum.Font.Gotham
 		itemArtist.TextXAlignment = Enum.TextXAlignment.Left
 		
-		local removeBtn = Instance.new("TextButton", queueItem)
-		removeBtn.Size = UDim2.new(0, 36, 0, 36)
-		removeBtn.Position = UDim2.new(1, -44, 0, 10)
-		removeBtn.BackgroundColor3 = Color3.fromRGB(180,80,80)
-		removeBtn.TextColor3 = Color3.fromRGB(255,255,255)
-		removeBtn.Text = "✕"
-		removeBtn.Font = Enum.Font.GothamBold
-		removeBtn.TextSize = 14
-		local remCorner = Instance.new("UICorner", removeBtn)
-		remCorner.CornerRadius = UDim.new(0,6)
-		removeBtn.MouseButton1Click:Connect(function()
+		local playBtn = Instance.new("TextButton", queueItem)
+		playBtn.Size = UDim2.new(0, 32, 0, 32)
+		playBtn.Position = UDim2.new(1, -44, 0, 12)
+		playBtn.BackgroundColor3 = COLORS.successPlay
+		playBtn.TextColor3 = Color3.fromRGB(255,255,255)
+		playBtn.Text = "▶"
+		playBtn.Font = Enum.Font.GothamBold
+		playBtn.TextSize = 12
+		playBtn.BorderSizePixel = 0
+		local playBtnCorner = Instance.new("UICorner", playBtn)
+		playBtnCorner.CornerRadius = UDim.new(0, 6)
+		playBtn.MouseButton1Click:Connect(function()
+			if not isPythonServerRunning() then
+				setStatus("Python script is not open!", COLORS.error)
+				return
+			end
+			local songToPlay = songQueue[i]
 			table.remove(songQueue, i)
 			updateQueueUI()
+			
+			currentSongData = songToPlay
+			songTitle.Text = songToPlay.title
+			songArtist.Text = songToPlay.artist
+			setStatus("🎵 Playing: " .. songToPlay.title, COLORS.success)
+			
+			local success = pcall(function()
+				game:HttpGet(CONFIG.pythonServer .. ENDPOINTS.play .. "?path=" .. encodeUrl(songToPlay.path))
+			end)
+			
+			if success then
+				isPlaying = true
+				isPaused = false
+				playButton.Visible = false
+				pauseButton.Visible = true
+				stopButton.Visible = true
+				startPlaybackMonitor()
+			else
+				setStatus("✗ Failed to play song", COLORS.error)
+				isPlaying = false
+				playButton.Text = "▶ Play"
+				playButton.Visible = true
+				pauseButton.Visible = false
+				stopButton.Visible = false
+			end
 		end)
 	end
 
-	queueList.CanvasSize = UDim2.new(0, 0, 0, #songQueue * 66)
-	queueFrame.Visible = #songQueue > 0
+	UIListLayout.Padding = UDim.new(0, 8)
+	local itemCount = #songQueue
+	local totalHeight = itemCount * (QUEUE_ITEM.height + 8)
+	queueList.CanvasSize = UDim2.new(0, 0, 0, math.max(totalHeight, 1))
+	queueFrame.Visible = itemCount > 0
 end
 
 local playbackMonitor = nil
@@ -798,10 +960,13 @@ local function startPlaybackMonitor()
 				playButton.Visible = true
 				pauseButton.Visible = false
 				stopButton.Visible = false
-				task.wait(0.5)
+				
 				if #songQueue > 0 then
+					task.wait(0.5)
 					playNextInQueue()
 				else
+					songTitle.Text = "No song loaded"
+					songArtist.Text = "Artist unknown"
 					setStatus("✓ Queue finished", COLORS.success)
 				end
 				break
@@ -893,11 +1058,9 @@ local function callPythonBackend(link)
 			
 			print("Song data received:", HttpService:JSONEncode(songData))
 			
-
-			
 			if isPlaying then
 				addToQueue(songData)
-				setStatus("✓ Song added to queue", COLORS.success)
+				setStatus("✓ " .. (songData.title or "Song") .. " added to queue (#" .. #songQueue .. ")", COLORS.success)
 			else
 				currentSongData = songData
 				playButton.Visible = true
