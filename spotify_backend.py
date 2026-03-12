@@ -35,8 +35,8 @@ except ImportError:
 WORKSPACE_FOLDER = Path(__file__).parent / "fart"
 WORKSPACE_FOLDER.mkdir(parents=True, exist_ok=True)
 
-SPOTIFY_CLIENT_ID = os.getenv("9078cc5da2be47f7ab3d254c3779a109") or os.getenv("16deb876df3a4982900fbd1d5f7aab8f")
-SPOTIFY_CLIENT_SECRET = os.getenv("9078cc5da2be47f7ab3d254c3779a109") or os.getenv("9078cc5da2be47f7ab3d254c3779a109")
+SPOTIFY_CLIENT_ID = os.getenv("6b10e4fde7124d40b3186702029e973a") or os.getenv("6b10e4fde7124d40b3186702029e973a")
+SPOTIFY_CLIENT_SECRET = os.getenv("0c5042827d074023b370a71df39729ba") or os.getenv("0c5042827d074023b370a71df39729ba")
 
 def check_dependencies():
 	"""Ensure required external executables are available for playback."""
